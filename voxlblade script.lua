@@ -2,6 +2,7 @@
 
 --// Libraries
 local ImGui = loadstring(game:HttpGet('https://github.com/depthso/Roblox-ImGUI/raw/main/ImGui.lua'))()
+local SimplePath = loadstring(game:HttpGet('https://raw.githubusercontent.com/grayzcale/simplepath/refs/heads/main/src/SimplePath.lua'))()
 
 --// Services
 local Players = game:GetService("Players")
@@ -15,6 +16,7 @@ local LocalPlayer = Players.LocalPlayer
 local Mouse = LocalPlayer:GetMouse()
 local CurrentTween = nil
 local InventoryItems = {}
+local Path = nil
 
 --// Game folders
 local Npcs = workspace.NPCS
@@ -99,6 +101,14 @@ local Offset = AutoFarmTab:Slider({
 	Value = 5,
 	MinValue = 1,
 	MaxValue = 10
+})
+local MovementMethod = AutoFarmTab:Combo({
+	Label = "Movement method",
+    Selected = "Tween",
+	Items = {
+		"Tween",
+		"Path find",
+	}
 })
 local EmemiesHeader = AutoFarmTab:CollapsingHeader({
 	Title = "Ememies",
@@ -220,6 +230,60 @@ local function TweenToCFrame(TargetCFrame: CFrame)
     Holder:Destroy()
 end
 
+local function PathfindPoint(TargetCFrame: CFrame)
+    local Character = LocalPlayer.Character
+    local Settings = {
+        TIME_VARIANCE = 0.5,
+        JUMP_WHEN_STUCK = true,
+        COMPARISON_CHECKS = 1
+    }
+
+    --// Create part for pathfinding
+    local Part = Instance.new("Part", workspace)
+    Part.Anchored = true
+    Part.CanCollide = false
+    Part:PivotTo(TargetCFrame)
+
+    --// Create path interface
+    local Path = SimplePath.new(Character, nil, Settings)
+    Path.Visualize = true
+    Path.WaypointReached:Connect(function()
+        Path:Run(Part)
+    end)
+
+    local function Error(ErrorType)
+        warn(`Path finding error! Defaulting to tweening. #{ErrorType}`)
+
+        Part:Destroy()
+        TweenToCFrame(TargetCFrame)
+
+        Path._events.Reached:Fire()
+        Path:Destroy()
+    end
+    
+    --// Error handling
+    Path.Blocked:Connect(Error)
+    Path.Error:Connect(Error)
+    
+    --// Run path
+    Path:Run(Part)
+
+    Path.Reached:Wait()
+    Part:Destroy()
+end
+
+local function MoveToPoint(TargetCFrame: CFrame)
+    local Method = MovementMethod.Value
+
+    print("Method:", Method)
+
+    if Method == "Tween" then
+        TweenToCFrame(TargetCFrame)
+    else
+        PathfindPoint(TargetCFrame)
+    end
+end
+
 function IsPointInArea(Point: (CFrame|Vector3), Area: (Part|Model)): boolean
 	local Size, Center
 	
@@ -293,54 +357,6 @@ local function IsSwordEquipped(): boolean
     return Character:FindFirstChild("Sword") and true
 end
 
-local function KillEnemy(NPC: BasePart)
-    local SwingDelay = 0.5
-    local Offset = Offset.Value
-    local OffsetCFrame = CFrame.new(0, 0, Offset)
-
-    local LastTick = tick() - 5
-    local Pivot = NPC:GetPivot()
-
-    TweenToCFrame(Pivot * OffsetCFrame)
-
-    local function UseWeapon()
-        --// Time check
-        local SecondsSinceSwing = tick() - LastTick
-        if SecondsSinceSwing < SwingDelay then return end
-        LastTick = tick()
-
-        --// Swing sword
-        UpdateSwing(Pivot, true)
-
-        if AutoWeaponart.Value then
-            UseWeaponArt()
-        end
-        if AutoRune.Value then
-            UseRune()
-        end
-    end
-    
-    --// Combat loop
-    while true do
-        if not NPC or not NPC.Parent then break end
-        if not AutoFarm.Value then break end
-
-        Pivot = NPC:GetPivot()
-
-        --// Move to pivot
-        local BehindCFrame = Pivot * OffsetCFrame
-        PivotTo(BehindCFrame)
-
-        --// Use weapon
-        UseWeapon()
-
-        task.wait()
-    end
-
-    --// Release the mouse button
-    UpdateSwing(nil, false)
-end
-
 local function FindClosestShopkeeper(): BasePart?
     local ClosestShopkeeper = nil
     local ClosestDistance = math.huge
@@ -376,9 +392,9 @@ end
 local function SellItems(Items: DestroyItems)
     local Shopkeeper = FindClosestShopkeeper()
     local Pivot = Shopkeeper:GetPivot()
-    local Offset = CFrame.new(0, 0, 5)
+    local Offset = CFrame.new(0, 0, -5)
 
-    TweenToCFrame(Pivot * Offset)
+    MoveToPoint(Pivot * Offset)
 
     return DestroyItems(Items)
 end
@@ -441,26 +457,82 @@ local function CheckAutoSell()
 
     SellDebugText.Text = `Items to sell count: {Count} Threshold: {Threshold}`
 
-    --// Tween to shopkeeper and sell items
+    --// Move to the closest shopkeeper and sell items
     if Count > Threshold then
         SellItems(Items)
     end
 end
 
 local function CheckSwordEquip()
-    if not AutoFarm.Value then return end
+    while true do
+        if not AutoFarm.Value then return end
+        if IsSwordEquipped() then return end
 
-    if not IsSwordEquipped() then
+        --// Equip the sword
         ToggleWeaponEquip()
+
+        wait(1)
     end
+end
+
+local function KillEnemy(NPC: BasePart)
+    local Offset = Offset.Value
+    local SwingDelay = 0.5
+    
+    local LastTick = tick() - 5
+    local Pivot = NPC:GetPivot()
+    local OffsetCFrame = CFrame.new(0, 0, Offset)
+
+    local function UseWeapon()
+        --// Time check
+        local SecondsSinceSwing = tick() - LastTick
+        if SecondsSinceSwing < SwingDelay then return end
+        LastTick = tick()
+
+        --// Check if the sword is equipped
+        CheckSwordEquip()
+
+        --// Swing sword
+        UpdateSwing(Pivot, true)
+
+        --// Use weapon art and rune
+        if AutoWeaponart.Value then
+            UseWeaponArt()
+        end
+        if AutoRune.Value then
+            UseRune()
+        end
+    end
+
+    MoveToPoint(Pivot * OffsetCFrame)
+    
+    --// Combat loop
+    while true do
+        if not NPC or not NPC.Parent then break end
+        if not AutoFarm.Value then break end
+
+        Pivot = NPC:GetPivot()
+
+        --// Move to pivot
+        local BehindCFrame = Pivot * OffsetCFrame
+        PivotTo(BehindCFrame)
+
+        --// Use weapon
+        UseWeapon()
+
+        task.wait()
+    end
+
+    --// Release the mouse button
+    UpdateSwing(nil, false)
 end
 
 local function AutoFarmTick()
     local OnlyFarmland = FarmlandOnly.Value
 
     for Name: string, Enabled: boolean in next, Ememies do
-        if not AutoFarm.Value then return end
         if not Enabled then continue end
+        if not AutoFarm.Value then return end
 
         --// Find and kill the NPC
         local Enemy = FindEmermy(Name, OnlyFarmland)
@@ -471,19 +543,20 @@ local function AutoFarmTick()
 end
 
 local function Tick()
-    if not Enabled.Value then return end
-
-    CheckSwordEquip()
     AutoFarmTick()
     CheckAutoSell()
 end
 
-local function StartTick()
-    coroutine.wrap(function()
-        while wait(1) do
+local function TickLoop()
+    while wait(1) do
+        if Enabled.Value then 
             Tick()
         end
-    end)()
+    end
+end
+
+local function StartTick()
+    coroutine.wrap(TickLoop)()
 end
 
 --// For decryption
