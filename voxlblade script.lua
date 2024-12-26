@@ -152,7 +152,7 @@ SettingsTab:Checkbox({
 	Label = "No rendering",
 	Value = false,
     Callback = function(self, Value)
-        RunService:Set3dRenderingEnabled(Value)
+        RunService:Set3dRenderingEnabled(not Value)
     end
 })
 
