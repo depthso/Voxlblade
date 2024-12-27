@@ -1,11 +1,18 @@
 # ⚔️ Voxlblade GUI
-An open-source voxlblade script for auto-farming and auto-sell with decryption of Item data. 
+An **open-source** script for voxlblade woth features such as auto farming and auto selling!
 
-It's recommended to use a private server! (100 robux)
+- It's recommended to use a **private server!** (100 robux)
 
-## Script
+# Features:
+- Path finding & Tweening
+- Auto sell
+- Auto farm
+- Auto weapon art & Rune
+
+# Script
 ```lua
-loadstring(game:HttpGet(('https://raw.githubusercontent.com/depthso/Voxlblade/refs/heads/main/voxlblade%20script.lua'),true))()
+local Url = 'https://raw.githubusercontent.com/depthso/Voxlblade/refs/heads/main/voxlblade%20script.lua'
+loadstring(game:HttpGet(Url))()
 ```
 
 ## Screenshots
